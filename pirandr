@@ -1,0 +1,78 @@
+#!/usr/bin/python3
+
+import tkinter as Tk
+import subprocess
+
+# ############################################################################
+
+class Application(Tk.Frame):
+    def __init__(self, master=None):
+        Tk.Frame.__init__(self, master)
+        config = self._xrandr(())
+        print("xrandr:")
+        for line in config.split('\n'):
+            print(line)
+        self.parse_xrandr(config.split('\n'))
+        self.grid()
+        self.createWidgets()
+
+    def _xrandr(self, args):
+        command = ("xrandr",) + args
+        print("command: ", " ".join(command))
+        p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE) # , env=self.environ)
+        ret, err = p.communicate()
+        status = p.wait()
+        if status != 0:
+            raise Exception("xrandr returned error code %d: %d" % (status, err))
+        if err:
+            raise Exception("xrandr reported %s" % err)
+
+        return ret.decode("utf-8")
+
+    def parse_rez(self, line):
+        # line is like: ('*1', '1024', 'x', '768', ...)
+        return line[1] + "x" + line[3]
+
+    def parse_xrandr(self, status):
+        self.current_rez = "800x600"  # default default
+        self.rez_choices = set()
+        for line in status:
+            parts = line.split()
+            if not parts:
+                # blank line
+                continue
+            if line[0:3] == ' SZ':
+                continue  # header row
+            if line[0] == '*':
+                # default rez as width space x space height
+                self.current_rez = self.parse_rez(parts)
+                self.rez_choices.add(self.current_rez)
+                continue
+            if line[0] == " ":
+                # supported resolution
+                rez = self.parse_rez(parts)
+                self.rez_choices.add(rez)
+                continue
+
+    def createWidgets(self):
+        self.lblRez = Tk.Label(self, justify=Tk.RIGHT, text="Resolution")
+        self.lblRez.grid(row=0, column=0)
+        self.rez_choice = Tk.StringVar(self)
+        self.rez_choice.set(self.current_rez)
+        # self.rez_choices = {'800x600', '1024x768', '1280x1024', '1366x768'}
+        self.resolutionChoice = Tk.OptionMenu(self, self.rez_choice, *self.rez_choices)
+        self.resolutionChoice.config(width=10)
+        self.resolutionChoice.grid(row=0, column=1)
+        self.btnSet = Tk.Button(self, text="Set", command=self.setRez)
+        self.btnSet.grid(row=0, column=2)
+
+    def setRez(self):
+        args = ("-s", self.rez_choice.get())
+        result = self._xrandr(args)
+
+
+# ############################################################################
+
+app = Application()
+app.master.title('PiRandR - screen control for Raspberry Pi')
+app.mainloop()
