@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import tkinter as Tk
+import tkinter.messagebox as messagebox
 import subprocess
 
 # ############################################################################
@@ -23,9 +24,12 @@ class Application(Tk.Frame):
         ret, err = p.communicate()
         status = p.wait()
         if status != 0:
-            raise Exception("xrandr returned error code %d: %d" % (status, err))
-        if err:
-            raise Exception("xrandr reported %s" % err)
+            err = err.decode("utf-8")
+            # raise Exception("xrandr returned error code %d: %s" % (status, err))
+            messagebox.showerror("xrandr error", "xrandr returned error code %d: %s" % (status, err))
+        elif err:
+            # raise Exception("xrandr reported %s" % err)
+            messagebox.showerror("xrandr error", "xrandr reported %s" % err)
 
         return ret.decode("utf-8")
 
@@ -33,9 +37,30 @@ class Application(Tk.Frame):
         # line is like: ('*1', '1024', 'x', '768', ...)
         return line[1] + "x" + line[3]
 
-    def parse_xrandr(self, status):
-        self.current_rez = "800x600"  # default default
-        self.rez_choices = set()
+    """
+    parse xrandr output
+    
+    for VNC, format like:
+     SZ:    Pixels          Physical       Refresh
+    *0    800 x 600    ( 203mm x 152mm )  *0   
+     1   1024 x 768    ( 260mm x 195mm )   0   
+     2   1280 x 1024   ( 325mm x 260mm )   0   
+     3   1280 x 768    ( 325mm x 195mm )   0   
+     4   1366 x 768    ( 347mm x 195mm )   0   
+     5   1600 x 900    ( 406mm x 229mm )   0   
+    Current rotation - normal
+    Current reflection - none
+    Rotations possible - normal 
+    Reflections possible - none
+
+    for RDP, format like:
+    Screen 0: minimum 256 x 256, current 1364 x 768, maximum 16384 x 16384
+    rdp0 connected 1364x768+0+0 0mm x 0mm
+       1364x768      50.00*
+       1920x1040     59.92  
+
+    """
+    def parse_xrandr_vnc(self, status):
         for line in status:
             parts = line.split()
             if not parts:
@@ -53,6 +78,38 @@ class Application(Tk.Frame):
                 rez = self.parse_rez(parts)
                 self.rez_choices.add(rez)
                 continue
+
+
+    def parse_xrandr_rdp(self, status):
+         # set a default for now
+         self.rez_choices = {'800x600', '1024x768', '1280x1024', '1366x768'}
+         self.rez_choices = {'1360x768'}
+         self.current_rez = '1360x768' # got to have something
+         # TODO: parse current resolution
+
+
+    def parse_xrandr(self, status):
+        self.current_rez = "800x600"  # default default
+        self.rez_choices = set()
+        # check first line - which format?
+        if len(status) == 0: return # can't parse - no lines!
+        # print("first line: >>"+status[0].split()[0]+"<<")
+        first_token = status[0].split()[0]
+        if first_token == "Screen":
+            # RDP format
+            print("RDP desktop detected")
+            self.parse_xrandr_rdp(status)
+        elif first_token == "SZ:":
+            # (Real)VNC format
+            print("(Real)VNC desktop detected")
+            self.parse_xrandr_vnc(status)
+        else:
+            # unknown format
+            print("desktop unknown")
+            messagebox.showerror("xrandr error", "Unknown xrandr output format - assuming 800x600")
+            self.rez_choices = {'800x600'}
+            self.current_rez = '800x600' # got to have something
+
 
     def createWidgets(self):
         self.lblRez = Tk.Label(self, justify=Tk.RIGHT, text="Resolution")
